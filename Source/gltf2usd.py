@@ -100,10 +100,10 @@ class GLTF2USD(object):
         """        
         xformPrim = UsdGeom.Xform.Define(self.stage, '{0}/{1}'.format(usd_xform.GetPath(), GLTF2USDUtils.convert_to_usd_friendly_node_name(node.name)))
         
-        if self._node_has_animations(node):
-            self._convert_animation_to_usd(node, xformPrim)
-        else:
-            xformPrim.AddTransformOp().Set(self._compute_rest_matrix(node))
+        #if self._node_has_animations(node):
+        #    self._convert_animation_to_usd(node, xformPrim)
+        #else:
+        #    xformPrim.AddTransformOp().Set(self._compute_rest_matrix(node))
             
 
         mesh = node.get_mesh()
@@ -324,7 +324,8 @@ class GLTF2USD(object):
             if attribute_name == 'JOINTS_0':
                 self._convert_skin_to_usd(gltf_node, gltf_primitive, parent_node, mesh)
         
-        weights = gltf_mesh.get_weights()
+        '''
+		weights = gltf_mesh.get_weights()
         if targets:
             skinBinding = UsdSkel.BindingAPI.Apply(mesh.GetPrim())
 
@@ -362,7 +363,8 @@ class GLTF2USD(object):
                 blend_shape = UsdSkel.BlendShape.Define(self.stage, blend_shape_name)
                 blend_shape.CreateOffsetsAttr(offsets)
                 blend_shape_targets.AddTarget(name)
-
+		'''
+				
         indices = gltf_primitive.get_indices()
         num_faces = len(indices)/3
         face_count = [3] * num_faces
