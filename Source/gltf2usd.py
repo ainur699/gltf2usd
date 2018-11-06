@@ -25,6 +25,19 @@ from _gltf2usd import version
 
 __version__ = version.Version.get_version_name()
 
+
+class EntireSkin:
+
+    def __init__(self):
+        self._inverse_bind_matrices = []
+        self._joints = []
+
+    def get_joints(self):
+        return self._joints
+        
+    def get_inverse_bind_matrices(self):
+        return self._inverse_bind_matrices
+        
 class GLTF2USD(object):
     """
     Class for converting glTF 2.0 models to Pixar's USD format.  Currently openly supports .gltf files
@@ -35,7 +48,7 @@ class GLTF2USD(object):
         TextureWrap.CLAMP_TO_EDGE : 'clamp',
         TextureWrap.MIRRORED_REPEAT : 'mirror',
         TextureWrap.REPEAT: 'repeat',
-    }
+        }
 
     def __init__(self, gltf_file, usd_file, fps, scale, verbose=False, use_euler_rotation=False):
         """Initializes the glTF to USD converter
@@ -82,6 +95,9 @@ class GLTF2USD(object):
         parent_transform = UsdGeom.Xform.Define(self.stage, '/root')
         parent_transform.AddScaleOp().Set((self.scale, self.scale, self.scale))
 
+        # create animation
+        _create_animation(parent_transform)
+        
         main_scene = self.gltf_loader.get_main_scene()
 
         nodes = main_scene.get_nodes()
@@ -89,6 +105,60 @@ class GLTF2USD(object):
         for node in root_nodes:
             self._convert_node_to_xform(node, parent_transform)
 
+    def _create_animation(self, usd_xform):
+        """
+        Arguments:
+        """
+        total_skin = EntireSkin()
+        joints = total_skin.get_joints();
+        inverse_bind_matrices = total_skin.get_inverse_bind_matrices()
+        
+        for i in range(9, 76):
+            joints.append(self.gltf_loader.get_nodes()[i]
+        
+        inverse_bind_matrices = [0 for i in range(67)]
+        
+        for i in range(1, 9):
+            node = self.gltf2loader.get_nodes()[i]
+            skin = node.get_skin()
+            mesh = node.get_mesh()
+            
+            primitive = gltf_mesh.get_primitives()[0]
+            attributes = primitive.get_attributes()
+            total_vertex_joints = attributes['JOINTS_0'].get_data()
+            
+            joint_prev = skin.get_joints()
+            inverse_bind_matrices_prev = skin.get_inverse_bind_matrices()
+            
+            # find remap dict
+            map_joints = {}
+            for id_prev, j_prev in enumerate(joint_prev):
+                for id, j in enumerate(joints):
+                    if j_prev._node_index == j._node_index:
+                        map_joints[id_prev] = id
+                    
+            # add bind mat to skin
+            for id, xform in enumerate(inverse_bind_matrices_prev):
+                inverse_bind_matrices[map_joints[id]] = inverse_bind_matrices_prev[id]
+            
+            # update indices
+            for joint_indicesin total_vertex_joints:
+                for i in range(len(joint_indices)):
+                    joint_indices[i] = map_joints[joint_indices[i]]
+            
+        # create skeleton
+        skeleton = None
+        skeleton = UsdSkel.Skeleton.Define(self.stage, '{0}/{1}'.format(usd_xform.GetPath(), "mixamorig:Hips")) 
+
+        usd_joint_names = [Sdf.Path(self._get_usd_joint_hierarchy_name(joint, ["mixamorig:Hips"])) for joint in joints]
+        gltf_bind_transforms = [Gf.Matrix4d(*xform).GetInverse() for xform in inverse_bind_matrices]
+        gltf_rest_transforms = [GLTF2USDUtils.compute_usd_transform_matrix_from_gltf_node(joint) for joint in joints]
+        
+        skeleton.CreateJointsAttr().Set(usd_joint_names)
+        skeleton.CreateBindTransformsAttr(gltf_bind_transforms)
+        skeleton.CreateRestTransformsAttr(gltf_rest_transforms)
+        
+        _create_usd_skeleton_animation(total_skin, skeleton, usd_joint_names)
 
     def _convert_node_to_xform(self, node, usd_xform):
         """Converts a glTF node to a USD transform node.
@@ -325,7 +395,7 @@ class GLTF2USD(object):
                 self._convert_skin_to_usd(gltf_node, gltf_primitive, parent_node, mesh)
         
         '''
-		weights = gltf_mesh.get_weights()
+        weights = gltf_mesh.get_weights()
         if targets:
             skinBinding = UsdSkel.BindingAPI.Apply(mesh.GetPrim())
 
@@ -363,14 +433,14 @@ class GLTF2USD(object):
                 blend_shape = UsdSkel.BlendShape.Define(self.stage, blend_shape_name)
                 blend_shape.CreateOffsetsAttr(offsets)
                 blend_shape_targets.AddTarget(name)
-		'''
-				
+        '''
+                
         indices = gltf_primitive.get_indices()
         num_faces = len(indices)/3
         face_count = [3] * num_faces
         mesh.CreateFaceVertexCountsAttr(face_count)
         mesh.CreateFaceVertexIndicesAttr(indices)
-
+        
     def _get_texture__wrap_modes(self, texture):
         """Get the USD texture wrap modes from a glTF texture
 
@@ -502,27 +572,30 @@ class GLTF2USD(object):
             usd_parent_node {UsdPrim} -- parent node of the usd node
             usd_mesh {[type]} -- [description]
         """
-        skel_binding_api = UsdSkel.BindingAPI(usd_mesh)
-        gltf_skin = gltf_node.get_skin()
-        gltf_joint_names = [GLTF2USDUtils.convert_to_usd_friendly_node_name(joint.name) for joint in gltf_skin.get_joints()]
-        usd_joint_names = [Sdf.Path(self._get_usd_joint_hierarchy_name(joint, gltf_skin.root_joints)) for joint in gltf_skin.get_joints()]
-        skeleton = self._create_usd_skeleton(gltf_skin, usd_node, usd_joint_names)
-        skeleton_animation = self._create_usd_skeleton_animation(gltf_skin, skeleton, usd_joint_names)
-
-        parent_path = usd_node.GetPath()
-
-        bind_matrices = []
-        rest_matrices = []
-
-        skeleton_root = self.stage.GetPrimAtPath(parent_path)
-        skel_binding_api = UsdSkel.BindingAPI(usd_mesh)
-        skel_binding_api.CreateGeomBindTransformAttr(Gf.Matrix4d(((1,0,0,0),(0,1,0,0),(0,0,1,0),(0,0,0,1))))
-        skel_binding_api.CreateSkeletonRel().AddTarget(skeleton.GetPath())
-        if skeleton_animation:
-            skel_binding_api.CreateAnimationSourceRel().AddTarget(skeleton_animation.GetPath())
         
-        bind_matrices = self._compute_bind_transforms(gltf_skin)
+        
+        skel_binding_api = UsdSkel.BindingAPI(usd_mesh)
+        #gltf_skin = gltf_node.get_skin()
+        #gltf_joint_names = [GLTF2USDUtils.convert_to_usd_friendly_node_name(joint.name) for joint in gltf_skin.get_joints()]
+        #usd_joint_names = [Sdf.Path(self._get_usd_joint_hierarchy_name(joint, gltf_skin.root_joints)) for joint in gltf_skin.get_joints()]
+        #skeleton = self._create_usd_skeleton(gltf_skin, usd_node, usd_joint_names)
+        #skeleton_animation = self._create_usd_skeleton_animation(gltf_skin, skeleton, usd_joint_names)
 
+        #parent_path = usd_node.GetPath()
+
+        #bind_matrices = []
+        #rest_matrices = []
+
+        #skeleton_root = self.stage.GetPrimAtPath(parent_path)
+        #skel_binding_api = UsdSkel.BindingAPI(usd_mesh)
+        skel_binding_api.CreateGeomBindTransformAttr(Gf.Matrix4d(((1,0,0,0),(0,1,0,0),(0,0,1,0),(0,0,0,1))))
+        #skel_binding_api.CreateSkeletonRel().AddTarget(skeleton.GetPath())
+        #if skeleton_animation:
+        #    skel_binding_api.CreateAnimationSourceRel().AddTarget(skeleton_animation.GetPath())
+        
+        #bind_matrices = self._compute_bind_transforms(gltf_skin)
+        
+        
         primitive_attributes = gltf_primitive.get_attributes()
 
         if 'WEIGHTS_0' in primitive_attributes and 'JOINTS_0' in primitive_attributes:
