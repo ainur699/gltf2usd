@@ -96,7 +96,7 @@ class GLTF2USD(object):
         parent_transform.AddScaleOp().Set((self.scale, self.scale, self.scale))
 
         # create animation
-        _create_animation(parent_transform)
+        self._create_animation(parent_transform)
         
         main_scene = self.gltf_loader.get_main_scene()
 
@@ -114,16 +114,19 @@ class GLTF2USD(object):
         inverse_bind_matrices = total_skin.get_inverse_bind_matrices()
         
         for i in range(9, 76):
-            joints.append(self.gltf_loader.get_nodes()[i]
+            joints.append(self.gltf_loader.get_nodes()[i])
         
-        inverse_bind_matrices = [0 for i in range(67)]
+        #inverse_bind_matrices.clear()
+        t_zero = (1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1)
+        for i in range(67):
+            inverse_bind_matrices.append(t_zero)
         
         for i in range(1, 9):
-            node = self.gltf2loader.get_nodes()[i]
+            node = self.gltf_loader.get_nodes()[i]
             skin = node.get_skin()
             mesh = node.get_mesh()
             
-            primitive = gltf_mesh.get_primitives()[0]
+            primitive = mesh.get_primitives()[0]
             attributes = primitive.get_attributes()
             total_vertex_joints = attributes['JOINTS_0'].get_data()
             
@@ -142,15 +145,20 @@ class GLTF2USD(object):
                 inverse_bind_matrices[map_joints[id]] = inverse_bind_matrices_prev[id]
             
             # update indices
-            for joint_indicesin total_vertex_joints:
-                for i in range(len(joint_indices)):
-                    joint_indices[i] = map_joints[joint_indices[i]]
+            print()
+            for i, joint_indices in enumerate(total_vertex_joints):
+                tmp = []
+                for joint_index in joint_indices:
+                    tmp.append(map_joints[joint_index])
+                
+                total_vertex_joints[i] = tuple(tmp)
+                joint_indices = tuple(tmp)
             
         # create skeleton
         skeleton = None
-        skeleton = UsdSkel.Skeleton.Define(self.stage, '{0}/{1}'.format(usd_xform.GetPath(), "mixamorig:Hips")) 
+        skeleton = UsdSkel.Skeleton.Define(self.stage, '{0}/{1}'.format(usd_xform.GetPath(), "mixamorig")) 
 
-        usd_joint_names = [Sdf.Path(self._get_usd_joint_hierarchy_name(joint, ["mixamorig:Hips"])) for joint in joints]
+        usd_joint_names = [Sdf.Path(self._get_usd_joint_hierarchy_name(joint, ["mixamorig"])) for joint in joints]
         gltf_bind_transforms = [Gf.Matrix4d(*xform).GetInverse() for xform in inverse_bind_matrices]
         gltf_rest_transforms = [GLTF2USDUtils.compute_usd_transform_matrix_from_gltf_node(joint) for joint in joints]
         
@@ -158,7 +166,7 @@ class GLTF2USD(object):
         skeleton.CreateBindTransformsAttr(gltf_bind_transforms)
         skeleton.CreateRestTransformsAttr(gltf_rest_transforms)
         
-        _create_usd_skeleton_animation(total_skin, skeleton, usd_joint_names)
+        self._create_usd_skeleton_animation(total_skin, skeleton, usd_joint_names)
 
     def _convert_node_to_xform(self, node, usd_xform):
         """Converts a glTF node to a USD transform node.
