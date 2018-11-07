@@ -31,6 +31,7 @@ class EntireSkin:
     def __init__(self):
         self._inverse_bind_matrices = []
         self._joints = []
+        self.root_joints = []
 
     def get_joints(self):
         return self._joints
@@ -92,19 +93,20 @@ class GLTF2USD(object):
         Converts the glTF nodes to USD Xforms.  The models get a parent Xform that scales the geometry by 100
         to convert from meters (glTF) to centimeters (USD).
         """
-        parent_transform = UsdGeom.Xform.Define(self.stage, '/root')
-        parent_transform.AddScaleOp().Set((self.scale, self.scale, self.scale))
+        #parent_transform = UsdGeom.Xform.Define(self.stage, '/root')
+        skel_root = UsdSkel.Root.Define(self.stage, '/root')
+        skel_root.AddScaleOp().Set((self.scale, self.scale, self.scale))
 
         # create animation
-        self._create_animation(parent_transform)
+        self._create_animation(skel_root)
         
         main_scene = self.gltf_loader.get_main_scene()
 
         nodes = main_scene.get_nodes()
         root_nodes = [node for node in nodes if node.parent == None]
         for node in root_nodes:
-            self._convert_node_to_xform(node, parent_transform)
-
+            self._convert_node_to_xform(node, skel_root)
+        
     def _create_animation(self, usd_xform):
         """
         Arguments:
@@ -112,6 +114,7 @@ class GLTF2USD(object):
         total_skin = EntireSkin()
         joints = total_skin.get_joints();
         inverse_bind_matrices = total_skin.get_inverse_bind_matrices()
+        total_skin.root_joints.append(self.gltf_loader.get_nodes()[0])
         
         for i in range(9, 76):
             joints.append(self.gltf_loader.get_nodes()[i])
@@ -155,6 +158,7 @@ class GLTF2USD(object):
                 joint_indices = tuple(tmp)
             
         # create skeleton
+        """
         skeleton = None
         skeleton = UsdSkel.Skeleton.Define(self.stage, '{0}/{1}'.format(usd_xform.GetPath(), "mixamorig")) 
 
@@ -165,8 +169,10 @@ class GLTF2USD(object):
         skeleton.CreateJointsAttr().Set(usd_joint_names)
         skeleton.CreateBindTransformsAttr(gltf_bind_transforms)
         skeleton.CreateRestTransformsAttr(gltf_rest_transforms)
-        
-        self._create_usd_skeleton_animation(total_skin, skeleton, usd_joint_names)
+        """
+        usd_joint_names = [Sdf.Path(self._get_usd_joint_hierarchy_name(joint, ["mixamorig"])) for joint in joints]
+        skeleton = self._create_usd_skeleton(total_skin, usd_xform, usd_joint_names)
+        skel_anim = self._create_usd_skeleton_animation(total_skin, skeleton, usd_joint_names)
 
     def _convert_node_to_xform(self, node, usd_xform):
         """Converts a glTF node to a USD transform node.
@@ -176,7 +182,7 @@ class GLTF2USD(object):
             node_index {int} -- glTF node index
             xform_name {str} -- USD xform name
         """        
-        xformPrim = UsdGeom.Xform.Define(self.stage, '{0}/{1}'.format(usd_xform.GetPath(), GLTF2USDUtils.convert_to_usd_friendly_node_name(node.name)))
+        #xformPrim = UsdGeom.Xform.Define(self.stage, '{0}/{1}'.format(usd_xform.GetPath(), GLTF2USDUtils.convert_to_usd_friendly_node_name(node.name)))
         
         #if self._node_has_animations(node):
         #    self._convert_animation_to_usd(node, xformPrim)
@@ -186,12 +192,12 @@ class GLTF2USD(object):
 
         mesh = node.get_mesh()
         if mesh != None:
-            usd_mesh = self._convert_mesh_to_xform(mesh, xformPrim, node)
+            usd_mesh = self._convert_mesh_to_xform(mesh, usd_xform, node)
                 
         children = node.get_children()
 
         for child in children:
-            self._convert_node_to_xform(child, xformPrim)
+            self._convert_node_to_xform(child, usd_xform)
 
 
     def _create_usd_skeleton(self, gltf_skin, usd_xform, usd_joint_names):
@@ -360,12 +366,12 @@ class GLTF2USD(object):
         attributes = gltf_primitive.get_attributes()
         skel_root = None
         targets = gltf_primitive.get_morph_targets()
-        if 'JOINTS_0' in attributes or len(targets) > 0:
-            skeleton_path = '{0}/{1}'.format(usd_node.GetPath(),  'skeleton_root')
-            skel_root = UsdSkel.Root.Define(self.stage, skeleton_path)
-            parent_node = skel_root
-            parent_path = parent_node.GetPath()
-        mesh = UsdGeom.Mesh.Define(self.stage, '{0}/{1}'.format(parent_node.GetPath(), GLTF2USDUtils.convert_to_usd_friendly_node_name(gltf_primitive.get_name())))
+        #if 'JOINTS_0' in attributes or len(targets) > 0:
+        #    skeleton_path = '{0}/{1}'.format(usd_node.GetPath(),  'skeleton_root')
+        #    skel_root = UsdSkel.Root.Define(self.stage, skeleton_path)
+        #    parent_node = skel_root
+        #    parent_path = parent_node.GetPath()
+        mesh = UsdGeom.Mesh.Define(self.stage, '{0}/{1}'.format(parent_node.GetPath(), GLTF2USDUtils.convert_to_usd_friendly_node_name(gltf_node.name)))
         mesh.CreateSubdivisionSchemeAttr().Set('none')
 
         material = gltf_primitive.get_material()
@@ -597,9 +603,8 @@ class GLTF2USD(object):
         #skeleton_root = self.stage.GetPrimAtPath(parent_path)
         #skel_binding_api = UsdSkel.BindingAPI(usd_mesh)
         skel_binding_api.CreateGeomBindTransformAttr(Gf.Matrix4d(((1,0,0,0),(0,1,0,0),(0,0,1,0),(0,0,0,1))))
-        #skel_binding_api.CreateSkeletonRel().AddTarget(skeleton.GetPath())
-        #if skeleton_animation:
-        #    skel_binding_api.CreateAnimationSourceRel().AddTarget(skeleton_animation.GetPath())
+        skel_binding_api.CreateSkeletonRel().AddTarget("/root/RootNode_0")
+        skel_binding_api.CreateAnimationSourceRel().AddTarget("/root/RootNode_0/anim")
         
         #bind_matrices = self._compute_bind_transforms(gltf_skin)
         

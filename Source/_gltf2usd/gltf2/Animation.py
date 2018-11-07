@@ -62,6 +62,20 @@ class AnimationSampler:
         output_data = self.get_output_data()
 
         closest_pos = bisect_left(input_data, input_sample)
+        
+        #24fps->24fps
+        value = output_data[closest_pos]
+        if len(value) == 4:
+            return Gf.Quatf(value[3], value[0], value[1], value[2])
+        else:
+            return value
+        
+        if input_data == input_data[closest_pos]:
+            value = output_data[closest_pos]
+            if len(value) == 4:
+                return Gf.Quatf(value[3], value[0], value[1], value[2])
+            else:
+                return value
         if closest_pos == 0:
             value = output_data[0]
             if len(value) == 4:
